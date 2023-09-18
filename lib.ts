@@ -6,7 +6,9 @@ import { ApplicationLoadBalancer } from "@pulumi/awsx/lb";
 import { FargateService } from "@pulumi/awsx/ecs";
 
 export const createDockerImage = (repoName: string): { image: docker.Image } => {
-    const repo = new aws.ecr.Repository(repoName);
+    const repo = new aws.ecr.Repository(repoName,{
+        forceDelete: true
+    });
     // Get registry info (creds and endpoint).
     const imageName = repo.repositoryUrl;
     const registryInfo = repo.registryId.apply(async id => {
@@ -37,9 +39,10 @@ export const buildService = (
     cluster: Cluster,
     image: docker.Image,
     loadbalancer: ApplicationLoadBalancer,
-    port: number
+    port: number,
+    serviceName: string
 ): FargateService => {
-    const service = new awsx.ecs.FargateService("service", {
+    const service = new awsx.ecs.FargateService(serviceName, {
         cluster: cluster.arn,
         assignPublicIp: true,
         taskDefinitionArgs: {
