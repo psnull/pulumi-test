@@ -7,7 +7,7 @@ const apiImage = lib.createDockerImage('infra-api')
 const webImage = lib.createDockerImage('infra-web')
 
 const cluster = new aws.ecs.Cluster("cluster", {});
-const apiLoadBalancer = new awsx.lb.ApplicationLoadBalancer("loadbalancer", {
+const apiLoadBalancer = new awsx.lb.ApplicationLoadBalancer("apiLoadBalancer", {
     defaultTargetGroup: {
         healthCheck: {
             path: '/WeatherForecast',
@@ -16,25 +16,23 @@ const apiLoadBalancer = new awsx.lb.ApplicationLoadBalancer("loadbalancer", {
         port: 5000
     }
 });
-const apiService: FargateService = lib.buildService(cluster, apiImage.image, apiLoadBalancer, 5000)
-// const tg = new aws.lb.TargetGroup('tg',{
-//     healthCheck: {
-//         path: '/WeatherForecast',
-//         port: '3000',
-//     },
-//     port: 3000
+const apiService: FargateService = lib.buildService(cluster, apiImage.image, apiLoadBalancer, 5000, 'apiService')
+let apiAddress = apiLoadBalancer.loadBalancer.dnsName.apply(d=>`http://${d}/WeatherForecast`)
+
+// new aws.apigateway.VpcLink("vpclink", {
+//     targetArn: apiLoadBalancer.loadBalancer.arn
 // })
 
-// const appLoadBalancer = new awsx.lb.ApplicationLoadBalancer("loadbalancer", {
-//     defaultTargetGroup: {
-//         healthCheck: {
-//             path: '/',
-//             port: '3000',
-//         },
-//         port: 3000
-//     }
-// });
-// const appService: FargateService = lib.buildService(cluster, apiImage.image, appLoadBalancer, 3000)
-
-// Create a load balancer to listen for requests and route them to the container.
-//const loadbalancer = new awsx.lb.ApplicationLoadBalancer("loadbalancer", {});
+const appLoadBalancer = new awsx.lb.ApplicationLoadBalancer("webLoadBalancer", {
+    defaultTargetGroup: {
+        healthCheck: {
+            path: '/',
+            port: '5000',
+        },
+        port: 5000
+    }
+});
+const appService: FargateService = lib.buildService(cluster, webImage.image, appLoadBalancer, 5000, 'webService',[{
+    name:'ApiAddress',
+    value: apiAddress
+}])

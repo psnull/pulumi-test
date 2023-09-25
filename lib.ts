@@ -4,6 +4,7 @@ import * as docker from "@pulumi/docker";
 import { Cluster, Service } from "@pulumi/aws/ecs";
 import { ApplicationLoadBalancer } from "@pulumi/awsx/lb";
 import { FargateService } from "@pulumi/awsx/ecs";
+import { Output } from "@pulumi/pulumi";
 
 export const createDockerImage = (repoName: string): { image: docker.Image } => {
     const repo = new aws.ecr.Repository(repoName,{
@@ -40,7 +41,8 @@ export const buildService = (
     image: docker.Image,
     loadbalancer: ApplicationLoadBalancer,
     port: number,
-    serviceName: string
+    serviceName: string,
+    env: {name:string, value: string | Output<string>}[]= []
 ): FargateService => {
     const service = new awsx.ecs.FargateService(serviceName, {
         cluster: cluster.arn,
@@ -60,6 +62,7 @@ export const buildService = (
                     containerPort:port,
                     hostPort:port
                 }],
+                environment:env
             },
         },
     });
