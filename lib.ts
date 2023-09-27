@@ -7,6 +7,9 @@ import { FargateService } from "@pulumi/awsx/ecs";
 import { Input, Output } from "@pulumi/pulumi";
 import { NatGateway, RouteTable, SecurityGroup, Subnet, SubnetArgs } from "@pulumi/aws/ec2";
 
+
+const vpcId = 'vpc-21bf405b'
+
 export const createDockerImage = (repoName: string): { image: docker.Image } => {
     const repo = new aws.ecr.Repository(repoName, {
         forceDelete: true
@@ -75,7 +78,6 @@ export const buildPublicService = (
 }
 export const createPublicSubnet = (
     name: string,
-    vpcId: Input<string>,
     cidrBlock: string,
     az: string
 ) => {
@@ -89,7 +91,7 @@ export const createPublicSubnet = (
 
 export const createRouteTable = (gw: NatGateway) => {
     let myrtb = new aws.ec2.RouteTable('myrtb', {
-        vpcId: 'vpc-21bf405b',
+        vpcId: vpcId,
         routes: [{
             gatewayId: gw.id,
             cidrBlock: '0.0.0.0/0'
@@ -107,9 +109,9 @@ export const createNatGateway = (publicSubnetId: Input<string>) => {
 }
 export const createPrivateSubnet = (name: string, natGateway: NatGateway, cidrBlock:string, az:string, myrtb: RouteTable) => {
     let privatesubnet = new aws.ec2.Subnet(name, {
-        vpcId: 'vpc-21bf405b',//hardcoded, replace,
+        vpcId: vpcId,
         mapPublicIpOnLaunch: false,
-        cidrBlock: cidrBlock,//hardcoded, replace
+        cidrBlock: cidrBlock,
         availabilityZone: az
     })
     new aws.ec2.RouteTableAssociation(`rtb-asoc-${name}`, {

@@ -1,8 +1,8 @@
 import * as aws from "@pulumi/aws";
 import * as lib from "./lib"
 
-const publicSubnet1 = lib.createPublicSubnet('pubsubnet1', 'vpc-21bf405b', '172.31.100.0/24', 'us-east-1a')
-const publicSubnet2 = lib.createPublicSubnet('pubsubnet2', 'vpc-21bf405b', '172.31.101.0/24', 'us-east-1b')
+const publicSubnet1 = lib.createPublicSubnet('pubsubnet1',  '172.31.100.0/24', 'us-east-1a')
+const publicSubnet2 = lib.createPublicSubnet('pubsubnet2',  '172.31.101.0/24', 'us-east-1b')
 const gw = lib.createNatGateway(publicSubnet1.id)
 let myrtb = lib.createRouteTable(gw)
 let privatesubnet1 = lib.createPrivateSubnet('privsubnet1', gw, '172.31.200.0/24', 'us-east-1a', myrtb)
