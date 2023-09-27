@@ -1,19 +1,15 @@
 import * as aws from "@pulumi/aws";
 import * as lib from "./lib"
 
-const publicSubnet1 = lib.createPublicSubnet('pubsubnet1',  '172.31.100.0/24', 'us-east-1a')
-const publicSubnet2 = lib.createPublicSubnet('pubsubnet2',  '172.31.101.0/24', 'us-east-1b')
-const gw = lib.createNatGateway(publicSubnet1.id)
-let myrtb = lib.createRouteTable(gw)
-let privatesubnet1 = lib.createPrivateSubnet('privsubnet1', gw, '172.31.200.0/24', 'us-east-1a', myrtb)
-let privatesubnet2 = lib.createPrivateSubnet('privsubnet2', gw, '172.31.201.0/24', 'us-east-1b', myrtb)
+const publicSubnets = lib.createPublicSubnets()
+const publicSubnetToCreateNatGateway = publicSubnets[0].id
+const natGateway = lib.createNatGateway(publicSubnetToCreateNatGateway)
+const privateSubnets = lib.createPrivateSubnets(natGateway)
+
+
+// Creating ECS cluster
 const cluster = new aws.ecs.Cluster("cluster");
 
-const apiImage = lib.createDockerImage('infra-api')
-
-
-
-const privateSubnets = [privatesubnet1, privatesubnet2]
 const externalSg = new aws.ec2.SecurityGroup('externalSg', {
     ingress: [{
         self: true,
@@ -69,7 +65,9 @@ let executionRole = new aws.iam.Role('executionRole', {
 new aws.cloudwatch.LogGroup('privateApiLogGroup', {
     name: "privateApi"
 })
-const definition = apiImage.image.imageName.apply(s => {
+
+const apiImage = lib.createDockerImage('infra-api')
+const definition = apiImage.imageName.apply(s => {
     return JSON.stringify([
         {
             name: "apiService",
@@ -112,7 +110,7 @@ const apiService = new aws.ecs.Service("apiService", {
     desiredCount: 1,
     launchType: 'FARGATE',
     networkConfiguration: {
-        subnets: [privatesubnet1, privatesubnet1].map(s => s.id),
+        subnets: privateSubnets.map(s => s.id),
         assignPublicIp: false,
         securityGroups: [internalSg.id]
     },
@@ -124,17 +122,14 @@ const apiService = new aws.ecs.Service("apiService", {
 });
 
 
-let apiAddress = privateLoadBalancer.loadBalancer.dnsName.apply(d => `http://${d}/WeatherForecast`)
 
-const webImage = lib.createDockerImage('infra-web')
-const appLoadBalancer = lib.createPublicLoadbalancer([publicSubnet1, publicSubnet2], externalSg)
 lib.buildPublicService(
     cluster,
-    webImage.image,
-    appLoadBalancer,
+    lib.createDockerImage('infra-web'),
+    lib.createPublicLoadbalancer([publicSubnet1, publicSubnet2], externalSg),
     [{
         name: 'ApiAddress',
-        value: apiAddress
+        value: privateLoadBalancer.loadBalancer.dnsName.apply(d => `http://${d}/WeatherForecast`)
     }],
     externalSg,
     [publicSubnet1, publicSubnet2]

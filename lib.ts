@@ -10,7 +10,7 @@ import { NatGateway, RouteTable, SecurityGroup, Subnet, SubnetArgs } from "@pulu
 
 const vpcId = 'vpc-21bf405b'
 
-export const createDockerImage = (repoName: string): { image: docker.Image } => {
+export const createDockerImage = (repoName: string) => {
     const repo = new aws.ecr.Repository(repoName, {
         forceDelete: true
     });
@@ -37,23 +37,23 @@ export const createDockerImage = (repoName: string): { image: docker.Image } => 
         imageName,
         registry: registryInfo,
     });
-    return { image: image }
+    return image
 }
 
 export const buildPublicService = (
     cluster: Cluster,
     image: docker.Image,
     loadbalancer: ApplicationLoadBalancer,
-    env: { name: string, value: string | Output<string>}[] = [],
+    env: { name: string, value: string | Output<string> }[] = [],
     securityGroup: SecurityGroup,
     subnets: Subnet[]
 ): FargateService => {
     const service = new awsx.ecs.FargateService('webService', {
         cluster: cluster.arn,
-        networkConfiguration:{
+        networkConfiguration: {
             assignPublicIp: true,
-            subnets:subnets.map(s=>s.id),
-            securityGroups:[securityGroup.id]
+            subnets: subnets.map(s => s.id),
+            securityGroups: [securityGroup.id]
         },
         taskDefinitionArgs: {
             runtimePlatform: {
@@ -76,17 +76,23 @@ export const buildPublicService = (
     });
     return service
 }
-export const createPublicSubnet = (
-    name: string,
-    cidrBlock: string,
-    az: string
-) => {
-    return new aws.ec2.Subnet(name, {
-        vpcId: vpcId,
-        mapPublicIpOnLaunch: true,
-        cidrBlock: cidrBlock,
-        availabilityZone: az
-    })
+
+export const createPublicSubnets = () => {
+    const createPublicSubnet = (
+        name: string,
+        cidrBlock: string,
+        az: string
+    ) => {
+        return new aws.ec2.Subnet(name, {
+            vpcId: vpcId,
+            mapPublicIpOnLaunch: true,
+            cidrBlock: cidrBlock,
+            availabilityZone: az
+        })
+    }
+    return [createPublicSubnet('pubsubnet1', '172.31.100.0/24', 'us-east-1a'),
+    createPublicSubnet('pubsubnet2', '172.31.101.0/24', 'us-east-1b')]
+
 }
 
 export const createRouteTable = (gw: NatGateway) => {
@@ -107,25 +113,34 @@ export const createNatGateway = (publicSubnetId: Input<string>) => {
     })
     return gw
 }
-export const createPrivateSubnet = (name: string, natGateway: NatGateway, cidrBlock:string, az:string, myrtb: RouteTable) => {
-    let privatesubnet = new aws.ec2.Subnet(name, {
-        vpcId: vpcId,
-        mapPublicIpOnLaunch: false,
-        cidrBlock: cidrBlock,
-        availabilityZone: az
-    })
-    new aws.ec2.RouteTableAssociation(`rtb-asoc-${name}`, {
-        subnetId: privatesubnet.id,
-        routeTableId: myrtb.id
-    })
-    return privatesubnet
+export const createPrivateSubnets = (gw: NatGateway) => {
+    const createPrivateSubnet = (
+        name: string,
+        cidrBlock: string,
+        az: string,
+        myrtb: RouteTable) => {
+        let privatesubnet = new aws.ec2.Subnet(name, {
+            vpcId: vpcId,
+            mapPublicIpOnLaunch: false,
+            cidrBlock: cidrBlock,
+            availabilityZone: az
+        })
+        new aws.ec2.RouteTableAssociation(`rtb-asoc-${name}`, {
+            subnetId: privatesubnet.id,
+            routeTableId: myrtb.id
+        })
+        return privatesubnet
+    }
+    let myrtb = createRouteTable(gw)
+    return [createPrivateSubnet('privsubnet1', '172.31.200.0/24', 'us-east-1a', myrtb),
+createPrivateSubnet('privsubnet2', '172.31.201.0/24', 'us-east-1b', myrtb)]
 }
 
-export const createPrivateLoadBalancer = (subnets:Subnet[], securityGroups: SecurityGroup[]) => {
+export const createPrivateLoadBalancer = (subnets: Subnet[], securityGroups: SecurityGroup[]) => {
     let privateLoadBalancer = new awsx.lb.ApplicationLoadBalancer("privateLoadBalancer", {
         internal: true,
-        subnetIds:subnets.map(s=>s.id),
-        securityGroups: securityGroups.map(sg=>sg.id),
+        subnetIds: subnets.map(s => s.id),
+        securityGroups: securityGroups.map(sg => sg.id),
         defaultTargetGroup: {
             healthCheck: {
                 path: '/WeatherForecast',
@@ -139,9 +154,9 @@ export const createPrivateLoadBalancer = (subnets:Subnet[], securityGroups: Secu
 
 export const createPublicLoadbalancer = (subnets: Subnet[], securityGroup: SecurityGroup) => {
     const appLoadBalancer = new awsx.lb.ApplicationLoadBalancer("webLoadBalancer", {
-        subnetIds: subnets.map(s=>s.id),
-        securityGroups:[securityGroup.id],
-        internal:false,
+        subnetIds: subnets.map(s => s.id),
+        securityGroups: [securityGroup.id],
+        internal: false,
         defaultTargetGroup: {
             healthCheck: {
                 path: '/',
@@ -163,11 +178,10 @@ export const createPrivateApi = (
 ) => {
     const service = new awsx.ecs.FargateService('privateApi', {
         cluster: cluster.arn,
-        // assignPublicIp: false,
-        networkConfiguration:{
-            securityGroups:securityGroups.map(s=>s.id),
-            subnets:privateSubnets.map(s=>s.id),
-            assignPublicIp:false,
+        networkConfiguration: {
+            securityGroups: securityGroups.map(s => s.id),
+            subnets: privateSubnets.map(s => s.id),
+            assignPublicIp: false,
         },
         taskDefinitionArgs: {
             runtimePlatform: {
