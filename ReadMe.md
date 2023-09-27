@@ -1,3 +1,5 @@
+# Diagram
+![](diagram.png)
 # How to Run
 
 install docker on your machine: [Install Docker](https://docs.docker.com/engine/install/)
