@@ -40,7 +40,7 @@ export const createDockerImage = (repoName: string) => {
     return image
 }
 
-export const buildPublicService = (
+export const buildExternalWebService = (
     cluster: Cluster,
     image: docker.Image,
     loadbalancer: ApplicationLoadBalancer,
@@ -94,20 +94,9 @@ export const createPublicSubnets = () => {
     createPublicSubnet('pubsubnet2', '172.31.101.0/24', 'us-east-1b')]
 
 }
-
-export const createRouteTable = (gw: NatGateway) => {
-    let myrtb = new aws.ec2.RouteTable('myrtb', {
-        vpcId: vpcId,
-        routes: [{
-            gatewayId: gw.id,
-            cidrBlock: '0.0.0.0/0'
-        }]
-    })
-    return myrtb
-}
 export const createNatGateway = (publicSubnetId: Input<string>) => {
-    let eip = new aws.ec2.Eip('myeip', {})
-    let gw = new aws.ec2.NatGateway('myNatGateway', {
+    const eip = new aws.ec2.Eip('myeip', {})
+    const gw = new aws.ec2.NatGateway('myNatGateway', {
         subnetId: publicSubnetId,
         allocationId: eip.id
     })
@@ -119,7 +108,7 @@ export const createPrivateSubnets = (gw: NatGateway) => {
         cidrBlock: string,
         az: string,
         myrtb: RouteTable) => {
-        let privatesubnet = new aws.ec2.Subnet(name, {
+        const privatesubnet = new aws.ec2.Subnet(name, {
             vpcId: vpcId,
             mapPublicIpOnLaunch: false,
             cidrBlock: cidrBlock,
@@ -131,13 +120,19 @@ export const createPrivateSubnets = (gw: NatGateway) => {
         })
         return privatesubnet
     }
-    let myrtb = createRouteTable(gw)
+    const myrtb = new aws.ec2.RouteTable('myrtb', {
+        vpcId: vpcId,
+        routes: [{
+            gatewayId: gw.id,
+            cidrBlock: '0.0.0.0/0'
+        }]
+    })
     return [createPrivateSubnet('privsubnet1', '172.31.200.0/24', 'us-east-1a', myrtb),
     createPrivateSubnet('privsubnet2', '172.31.201.0/24', 'us-east-1b', myrtb)]
 }
 
-export const createPrivateLoadBalancer = (subnets: Subnet[], securityGroups: SecurityGroup[]) => {
-    let privateLoadBalancer = new awsx.lb.ApplicationLoadBalancer("privateLoadBalancer", {
+export const createInternalLoadBalancer = (subnets: Subnet[], securityGroups: SecurityGroup[]) => {
+    const privateLoadBalancer = new awsx.lb.ApplicationLoadBalancer("privateLoadBalancer", {
         internal: true,
         subnetIds: subnets.map(s => s.id),
         securityGroups: securityGroups.map(sg => sg.id),
@@ -237,3 +232,92 @@ export const internalSecurityGroup = (externalSg: SecurityGroup) => new aws.ec2.
         ipv6CidrBlocks: ['::/0']
     }]
 })
+
+export const buildExecutionRole = (name: string = "executionRole") =>{
+    const executionRole = new aws.iam.Role(name, {
+        assumeRolePolicy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Sid: "",
+                    Effect: "Allow",
+                    Principal: {
+                        Service: "ecs-tasks.amazonaws.com"
+                    },
+                    Action: "sts:AssumeRole"
+                }
+            ]
+        }),
+        managedPolicyArns: [
+            'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        ]
+    })
+    return executionRole
+}
+
+export const buildInternalService = (
+    cluster: Cluster,
+    privateSubnets: Subnet[],
+    internalLoadBalancer: ApplicationLoadBalancer,
+    internalSecurityGroup: SecurityGroup
+) => {
+    new aws.cloudwatch.LogGroup('privateApiLogGroup', {
+        name: "privateApi"
+    })
+    
+    const internalApiImage = createDockerImage('infra-api')
+    const internalApiContainerDefinition = internalApiImage.imageName.apply(s => {
+        return JSON.stringify([
+            {
+                name: "apiService",
+                image: s,
+                cpu: 10,
+                networkMode: "awsvpc",
+                memory: 512,
+                essential: true,
+                portMappings: [{
+                    containerPort: 5000,
+                    hostPort: 5000,
+                }],
+                logConfiguration: {
+                    logDriver: "awslogs",
+                    options: {
+                        'awslogs-group': "privateApi",
+                        'awslogs-region': "us-east-1",
+                        'awslogs-stream-prefix': "awsx-ecs"
+                    }
+                }
+            },
+        ])
+    })
+    const internalApiTaskDefinition = new aws.ecs.TaskDefinition("service", {
+        family: "service",
+        containerDefinitions: internalApiContainerDefinition,
+        networkMode: 'awsvpc',
+        runtimePlatform: {
+            cpuArchitecture: "ARM64"
+        },
+        cpu: '256',
+        memory: '512',
+        requiresCompatibilities: ['FARGATE'],
+        executionRoleArn: buildExecutionRole().arn
+    });
+    
+    const internalApiService = new aws.ecs.Service("apiService", {
+        cluster: cluster.id,
+        taskDefinition: internalApiTaskDefinition.arn,
+        desiredCount: 1,
+        launchType: 'FARGATE',
+        networkConfiguration: {
+            subnets: privateSubnets.map(s => s.id),
+            assignPublicIp: false,
+            securityGroups: [internalSecurityGroup.id]
+        },
+        loadBalancers: [{
+            targetGroupArn: internalLoadBalancer.defaultTargetGroup.arn,
+            containerName: "apiService",
+            containerPort: 5000,
+        }],
+    });
+    return internalApiService
+}
