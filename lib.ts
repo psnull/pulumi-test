@@ -9,10 +9,14 @@ import { NatGateway, RouteTable, SecurityGroup, Subnet, SubnetArgs } from "@pulu
 
 
 const vpcId = 'vpc-21bf405b'
+const tags = {
+    'env':'development'
+}
 
 export const buildDockerImage = (repoName: string) => {
     const repo = new aws.ecr.Repository(repoName, {
-        forceDelete: true
+        forceDelete: true,
+        tags
     });
     // Get registry info (creds and endpoint).
     const imageName = repo.repositoryUrl;
@@ -72,6 +76,7 @@ export const buildExternalWebService = (
                 environment: env
             },
         },
+        tags
     });
     return service
 }
@@ -86,7 +91,8 @@ export const buildPublicSubnets = () => {
             vpcId: vpcId,
             mapPublicIpOnLaunch: true,
             cidrBlock: cidrBlock,
-            availabilityZone: az
+            availabilityZone: az,
+            tags
         })
     }
     return [
@@ -97,10 +103,11 @@ export const buildPublicSubnets = () => {
 }
 
 export const buildNatGateway = (publicSubnetId: Input<string>) => {
-    const eip = new aws.ec2.Eip('natGatewayEip', {})
+    const eip = new aws.ec2.Eip('natGatewayEip', {tags})
     const gw = new aws.ec2.NatGateway('customNatGateway', {
         subnetId: publicSubnetId,
-        allocationId: eip.id
+        allocationId: eip.id,
+        tags
     })
     return gw
 }
@@ -115,11 +122,12 @@ export const buildPrivateSubnets = (gw: NatGateway) => {
             vpcId: vpcId,
             mapPublicIpOnLaunch: false,
             cidrBlock: cidrBlock,
-            availabilityZone: az
+            availabilityZone: az,
+            tags
         })
         new aws.ec2.RouteTableAssociation(`rtb-asoc-${name}`, {
             subnetId: privatesubnet.id,
-            routeTableId: myrtb.id
+            routeTableId: myrtb.id,
         })
         return privatesubnet
     }
@@ -128,7 +136,8 @@ export const buildPrivateSubnets = (gw: NatGateway) => {
         routes: [{
             gatewayId: gw.id,
             cidrBlock: '0.0.0.0/0'
-        }]
+        }],
+        tags
     })
     return [
         buildPrivateSubnet('privsubnet1', '172.31.200.0/24', 'us-east-1a', myrtb),
@@ -147,7 +156,8 @@ export const buildInternalLoadBalancer = (subnets: Subnet[], securityGroups: Sec
                 port: '5000',
             },
             port: 5000
-        }
+        },
+        tags
     });
     return privateLoadBalancer
 }
@@ -163,7 +173,8 @@ export const buildPublicLoadbalancer = (subnets: Subnet[], securityGroup: Securi
                 port: '5000',
             },
             port: 5000
-        }
+        },
+        tags
     });
     return appLoadBalancer
 }
@@ -182,7 +193,8 @@ export const externalSecurityGroup = () => new aws.ec2.SecurityGroup('externalSg
         protocol: 'tcp',
         cidrBlocks: ['0.0.0.0/0'],
         ipv6CidrBlocks: ['::/0']
-    }]
+    }],
+    tags
 })
 
 export const internalSecurityGroup = (externalSg: SecurityGroup) => new aws.ec2.SecurityGroup('internalSg', {
@@ -199,7 +211,8 @@ export const internalSecurityGroup = (externalSg: SecurityGroup) => new aws.ec2.
         protocol: 'tcp',
         cidrBlocks: ['0.0.0.0/0'],
         ipv6CidrBlocks: ['::/0']
-    }]
+    }],
+    tags
 })
 
 export const buildSimpleEcsExecutionRole = (name: string = "executionRole") => {
@@ -219,7 +232,8 @@ export const buildSimpleEcsExecutionRole = (name: string = "executionRole") => {
         }),
         managedPolicyArns: [
             'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
-        ]
+        ],
+        tags
     })
     return executionRole
 }
@@ -269,7 +283,8 @@ export const buildInternalWebService = (
         cpu: '256',
         memory: '512',
         requiresCompatibilities: ['FARGATE'],
-        executionRoleArn: buildSimpleEcsExecutionRole().arn
+        executionRoleArn: buildSimpleEcsExecutionRole().arn,
+        tags
     });
 
     const internalApiService = new aws.ecs.Service("apiService", {
@@ -287,6 +302,7 @@ export const buildInternalWebService = (
             containerName: "apiService",
             containerPort: 5000,
         }],
+        tags
     });
     return internalApiService
 }
