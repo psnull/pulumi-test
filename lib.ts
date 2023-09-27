@@ -133,7 +133,7 @@ export const createPrivateSubnets = (gw: NatGateway) => {
     }
     let myrtb = createRouteTable(gw)
     return [createPrivateSubnet('privsubnet1', '172.31.200.0/24', 'us-east-1a', myrtb),
-createPrivateSubnet('privsubnet2', '172.31.201.0/24', 'us-east-1b', myrtb)]
+    createPrivateSubnet('privsubnet2', '172.31.201.0/24', 'us-east-1b', myrtb)]
 }
 
 export const createPrivateLoadBalancer = (subnets: Subnet[], securityGroups: SecurityGroup[]) => {
@@ -204,3 +204,36 @@ export const createPrivateApi = (
     return service
 }
 
+export const externalSecurityGroup = () => new aws.ec2.SecurityGroup('externalSg', {
+    ingress: [{
+        self: true,
+        fromPort: 0,
+        toPort: 65535,
+        protocol: 'tcp',
+        cidrBlocks: ['0.0.0.0/0'],
+    }],
+    egress: [{
+        fromPort: 0,
+        toPort: 65535,
+        protocol: 'tcp',
+        cidrBlocks: ['0.0.0.0/0'],
+        ipv6CidrBlocks: ['::/0']
+    }]
+})
+
+export const internalSecurityGroup = (externalSg: SecurityGroup) => new aws.ec2.SecurityGroup('internalSg', {
+    ingress: [{
+        self: true,
+        fromPort: 0,
+        toPort: 65535,
+        protocol: 'tcp',
+        securityGroups: [externalSg.id]
+    }],
+    egress: [{
+        fromPort: 0,
+        toPort: 65535,
+        protocol: 'tcp',
+        cidrBlocks: ['0.0.0.0/0'],
+        ipv6CidrBlocks: ['::/0']
+    }]
+})

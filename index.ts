@@ -10,40 +10,10 @@ const privateSubnets = lib.createPrivateSubnets(natGateway)
 // Creating ECS cluster
 const cluster = new aws.ecs.Cluster("cluster");
 
-const externalSg = new aws.ec2.SecurityGroup('externalSg', {
-    ingress: [{
-        self: true,
-        fromPort: 0,
-        toPort: 65535,
-        protocol: 'tcp',
-        cidrBlocks:['0.0.0.0/0'],
-    }],
-    egress:[{
-        fromPort:0,
-        toPort:65535,
-        protocol:'tcp',
-        cidrBlocks:['0.0.0.0/0'],
-        ipv6CidrBlocks:['::/0']
-    }]
-})
-const internalSg = new aws.ec2.SecurityGroup('internalSg', {
-    ingress: [{
-        self: true,
-        fromPort: 0,
-        toPort: 65535,
-        protocol: 'tcp',
-        securityGroups:[externalSg.id]
-    }],
-    egress:[{
-        fromPort:0,
-        toPort:65535,
-        protocol:'tcp',
-        cidrBlocks:['0.0.0.0/0'],
-        ipv6CidrBlocks:['::/0']
-    }]
-})
+const externalSecurityGroup = lib.externalSecurityGroup()
+const internalSecurityGroup = lib.internalSecurityGroup(externalSecurityGroup)
 
-let privateLoadBalancer = lib.createPrivateLoadBalancer(privateSubnets, [internalSg])
+let privateLoadBalancer = lib.createPrivateLoadBalancer(privateSubnets, [internalSecurityGroup])
 let executionRole = new aws.iam.Role('executionRole', {
     assumeRolePolicy: JSON.stringify({
         Version: "2012-10-17",
@@ -104,7 +74,7 @@ const apiTaskDefinition = new aws.ecs.TaskDefinition("service", {
     executionRoleArn: executionRole.arn
 });
 
-const apiService = new aws.ecs.Service("apiService", {
+new aws.ecs.Service("apiService", {
     cluster: cluster.id,
     taskDefinition: apiTaskDefinition.arn,
     desiredCount: 1,
@@ -112,7 +82,7 @@ const apiService = new aws.ecs.Service("apiService", {
     networkConfiguration: {
         subnets: privateSubnets.map(s => s.id),
         assignPublicIp: false,
-        securityGroups: [internalSg.id]
+        securityGroups: [internalSecurityGroup.id]
     },
     loadBalancers: [{
         targetGroupArn: privateLoadBalancer.defaultTargetGroup.arn,
@@ -126,11 +96,11 @@ const apiService = new aws.ecs.Service("apiService", {
 lib.buildPublicService(
     cluster,
     lib.createDockerImage('infra-web'),
-    lib.createPublicLoadbalancer([publicSubnet1, publicSubnet2], externalSg),
+    lib.createPublicLoadbalancer(publicSubnets, externalSecurityGroup),
     [{
         name: 'ApiAddress',
         value: privateLoadBalancer.loadBalancer.dnsName.apply(d => `http://${d}/WeatherForecast`)
     }],
-    externalSg,
-    [publicSubnet1, publicSubnet2]
+    externalSecurityGroup,
+    publicSubnets
 )
